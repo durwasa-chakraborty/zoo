@@ -4,8 +4,8 @@ on:
   push:
     branches:
       - main
-      - ci-setup
   pull_request:
+      - main
 
 jobs:
   build-image:
