@@ -1,60 +1,19 @@
-name: Zoo
+name: Zoo CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches:
+      - main
+      - ci-setup
   pull_request:
-    branches: [ main, master ]
 
 jobs:
-  build:
+  build-image:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
-      - name: Set up OCaml with Opam
-        uses: ocaml/setup-ocaml@v2
-        with:
-          ocaml-version: 5.0.0
-          cache-prefix: zoo-ci
-
-      - name: Add opam repositories
-        run: |
-          opam repo add coq-released https://coq.inria.fr/opam/released
-          opam repo add iris-dev git+https://gitlab.mpi-sws.org/iris/opam.git
-
-      - name: Pin custom OCaml compiler and ocaml2zoo
-        run: |
-          opam pin add ocaml-variants git+https://github.com/clef-men/ocaml#generative_constructors --yes
-          opam switch create . --empty --yes
-          eval $(opam env)
-          opam pin add ocaml2zoo git+https://github.com/clef-men/ocaml2zoo#main --yes
-
-      - name: Install project dependencies
-        run: |
-          eval $(opam env)
-          opam install $(find . -name '*.opam' ! -name 'coq-*') ./coq-zoo.opam --deps-only --yes
-
-      - name: Build OCaml libraries
-        run: |
-          eval $(opam env)
-          make lib
-
-      - name: Run ocaml2zoo translation
-        run: |
-          eval $(opam env)
-          make ocaml2zoo
-
-      - name: Build Coq proofs
-        run: |
-          eval $(opam env)
-          make -j$(nproc)
-
-      - name: Archive build log (on failure)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log
-          path: _build
+      - name: Build Docker image (runs make -j4 inside)
+        run: docker build -t zoo-ci .
