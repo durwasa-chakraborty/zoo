@@ -123,24 +123,28 @@ Section rcfd_G.
 
   #[local] Definition inv_inner_open γ Ψ state ops : iProp Σ :=
     ∃ q qs,
-    ⌜ops = size qs ∧ set_fold Qp.add q qs = 1%Qp⌝ ∗
-    ⌜state = Open⌝ ∗
     tokens_auth γ qs ∗
+    ⌜state = Open⌝ ∗
+    ⌜ops = size qs⌝ ∗
+    ⌜set_fold Qp.add q qs = 1%Qp⌝ ∗
     Ψ q.
   #[local] Instance : CustomIpatFormat "inv_inner_open" :=
     "(
       %q{} &
       %qs{} &
-      (-> & %Hqs{}) &
-      {%H{eq};->} &
       Htokens_auth &
+      {%H{eq};->} &
+      -> &
+      %Hqs{} &
       HΨ{_{!}}
     )".
   #[local] Definition inv_inner_closing_users γ Ψ state ops : iProp Σ :=
     ∃ q qs fn,
-    ⌜ops = size qs ∧ 0 < size qs ∧ set_fold Qp.add q qs = 1%Qp⌝ ∗
-    ⌜state = Closing fn⌝ ∗
     tokens_auth γ qs ∗
+    ⌜state = Closing fn⌝ ∗
+    ⌜ops = size qs⌝ ∗
+    ⌜0 < size qs⌝ ∗
+    ⌜set_fold Qp.add q qs = 1%Qp⌝ ∗
     Ψ q ∗
     (Ψ 1%Qp -∗ WP fn () {{ itype_unit }}).
   #[local] Instance : CustomIpatFormat "inv_inner_closing_users" :=
@@ -148,9 +152,11 @@ Section rcfd_G.
       %q{} &
       %qs{} &
       %fn{} &
-      ({%H{eq_ops};->} & %Hqs{}_size & %Hqs{}) &
-      {%H{eq};->} &
       Htokens_auth &
+      {%H{eq};->} &
+      {%H{eq_ops};->} &
+      %Hqs{}_size &
+      %Hqs{} &
       HΨ{_{!}} &
       Hfn{}
     )".
@@ -205,20 +211,6 @@ Section rcfd_G.
       #Hinv
     )".
 
-  Definition rcfd_token t q : iProp Σ :=
-    ∃ l γ,
-    ⌜t = #l⌝ ∗
-    meta l nroot γ ∗
-    tokens_frag γ q.
-  #[local] Instance : CustomIpatFormat "token" :=
-    "(
-      %l_ &
-      %γ_ &
-      %Heq &
-      #Hmeta_ &
-      Htokens_frag
-    )".
-
   Definition rcfd_closing t : iProp Σ :=
     ∃ l γ,
     ⌜t = #l⌝ ∗
@@ -252,11 +244,6 @@ Section rcfd_G.
     solve_proper.
   Qed.
 
-  #[global] Instance rcfd_token_timeless t q :
-    Timeless (rcfd_token t q).
-  Proof.
-    apply _.
-  Qed.
   #[global] Instance rcfd_closing_timeless t :
     Timeless (rcfd_closing t).
   Proof.
@@ -388,12 +375,10 @@ Section rcfd_G.
     iMod (meta_set γ with "Hmeta") as "#Hmeta"; first done.
 
     iApply "HΦ".
-    iExists l, γ. iSteps.
-    iExists Open. iSteps.
-    iExists ∅. iSteps.
+    iExists l, γ. iSteps. iExists Open. iSteps.
   Qed.
 
-  #[local] Lemma rcfd_put_spec_aux l γ Ψ `{!Fractional Ψ} :
+  #[local] Lemma rcfd_put_spec l γ Ψ `{!Fractional Ψ} :
     {{{
       inv' l γ Ψ ∗
       ( lstate_lb γ LClosingNoUsers
@@ -419,21 +404,17 @@ Section rcfd_G.
     { iDestruct "H" as "[#Hlstate_lb | (%q & Htokens_frag & HΨ)]".
       - iDestruct (lstate_valid_closing_no_users with "Hlstate_auth Hlstate_lb") as %->.
         iDestruct "Hlstate" as "(:inv_inner_closing_no_users =1)".
-        iExists (Closing _). iStep 4. done.
+        iFrameSteps 2.
       - destruct lstate1.
         + iDestruct "Hlstate" as "(:inv_inner_open =1 !=)".
           iDestruct (tokens_elem_of with "Htokens_auth Htokens_frag") as %Hq.
-          iExists Open. iStep 3. iExists (q + q1)%Qp, (qs1 ∖ {[+q+]}).
-          iSplitR; [iSplitR; iPureIntro | iSplitR; [| iSplitR "HΨ HΨ_"]].
+          iMod (tokens_update_dealloc with "Htokens_auth Htokens_frag") as "Htokens_auth".
+          iDestruct (fractional with "[$HΨ $HΨ_]") as "HΨ".
+          iFrameSteps 2; iPureIntro.
           * assert (qs1 ≠ ∅) as Hqs1_size%gmultiset_size_non_empty_iff by multiset_solver.
             rewrite gmultiset_size_difference; first multiset_solver.
             rewrite gmultiset_size_singleton. lia.
           * rewrite (gmultiset_disj_union_difference' q qs1) // gmultiset_set_fold_disj_union gmultiset_set_fold_singleton // in Hqs1.
-          * iSteps.
-          * iMod (tokens_update_dealloc with "Htokens_auth Htokens_frag") as "$".
-            iSteps.
-          * iDestruct (fractional with "[$HΨ $HΨ_]") as "$".
-            iSteps.
         + iDestruct "Hlstate" as "(:inv_inner_closing_users =1 !=)".
           iDestruct (tokens_elem_of with "Htokens_auth Htokens_frag") as %Hq.
           destruct (decide (size qs1 = 1)) as [Hqs_size' | Hqs_size'].
@@ -516,28 +497,12 @@ Section rcfd_G.
         { iExists (Closing _). iFrameSteps. }
         iSteps.
   Qed.
-  #[local] Lemma rcfd_put_spec t fd Ψ `{!Fractional Ψ} q :
-    {{{
-      rcfd_inv t fd Ψ ∗
-      rcfd_token t q ∗
-      Ψ q
-    }}}
-      rcfd_put t
-    {{{
-      RET ();
-      True
-    }}}.
-  Proof.
-    iIntros "%Φ ((:inv) & (:token) & HΨ) HΦ". injection Heq as <-.
-    iDestruct (meta_agree with "Hmeta Hmeta_") as %<-. iClear "Hmeta_".
-    iApply (rcfd_put_spec_aux with "[$Hinv Htokens_frag HΨ] HΦ"); first iSteps.
-  Qed.
 
-  #[local] Lemma rcfd_get_spec t fd Ψ `{HΨ : !Fractional Ψ} :
+  #[local] Lemma rcfd_get_spec l γ Ψ `{HΨ : !Fractional Ψ} :
     {{{
-      rcfd_inv t fd Ψ
+      inv' l γ Ψ
     }}}
-      rcfd_get t
+      rcfd_get #l
     {{{ o,
       RET (o : val);
       match o with
@@ -545,13 +510,13 @@ Section rcfd_G.
           True
       | Some fd_ =>
           ∃ q,
-          ⌜fd_ = fd⌝ ∗
-          rcfd_token t q ∗
+          ⌜fd_ = γ.(metadata_fd)⌝ ∗
+          tokens_frag γ q ∗
           Ψ q
       end
     }}}.
   Proof.
-    iIntros "%Φ (:inv) HΦ".
+    iIntros "%Φ #Hinv HΦ".
 
     wp_rec. wp_pures.
 
@@ -613,9 +578,36 @@ Section rcfd_G.
       iSplitR "H HΦ". { iFrameSteps 2. }
       iModIntro. clear- HΨ.
 
-      wp_smart_apply (rcfd_put_spec_aux with "[$]") as "_".
+      wp_smart_apply (rcfd_put_spec with "[$]") as "_".
       wp_pures.
       iApply ("HΦ" $! None). iSteps.
+  Qed.
+
+  Lemma rcfd_use_spec Χ t fd Ψ `{!Fractional Ψ} (closed open : val) :
+    {{{
+      rcfd_inv t fd Ψ ∗
+      WP closed () {{ Χ false }} ∗
+      ( ∀ q,
+        Ψ q -∗
+        WP open fd {{ res,
+          Ψ q ∗
+          Χ true res
+        }}
+      )
+    }}}
+      rcfd_use t closed open
+    {{{ b res,
+      RET res;
+      Χ b res
+    }}}.
+  Proof.
+    iIntros "%Φ ((:inv) & Hclosed & Hopen) HΦ".
+    wp_rec.
+    wp_smart_apply (rcfd_get_spec with "Hinv") as ([v |]) ""; last iSteps.
+    iIntros "(%q & -> & Htoken & HΨ)".
+    wp_smart_apply (wp_wand with "(Hopen HΨ)") as "%res (HΨ & HΧ)".
+    wp_smart_apply (rcfd_put_spec with "[Htoken HΨ]"); first iSteps.
+    iSteps.
   Qed.
 
   #[local] Lemma rcfd_close_spec_aux closing t fd Ψ :
@@ -694,7 +686,7 @@ Section rcfd_G.
             iMod (lstate_update LClosingNoUsers with "Hlstate_auth") as "Hlstate_auth"; first done.
             iDestruct ("Hclosing" with "HΨ") as "(%chars & Hfd)".
             iExists (Closing _). iFrameSteps.
-          - iExists (Closing _). iFrame. iStep 3 as "HΨ".
+          - iExists (Closing _). iFrame. iStep 8 as "HΨ".
             iDestruct ("Hclosing" with "HΨ") as "(%chars & Hfd)".
             iSteps.
         }
@@ -932,35 +924,6 @@ Section rcfd_G.
     iSteps.
   Qed.
 
-  Lemma rcfd_use_spec Χ t fd Ψ `{!Fractional Ψ} (closed open : val) :
-    {{{
-      rcfd_inv t fd Ψ ∗
-      WP closed () {{ Χ false }} ∗
-      ( ∀ q,
-        rcfd_token t q -∗
-        Ψ q -∗
-        WP open fd {{ res,
-          rcfd_token t q ∗
-          Ψ q ∗
-          Χ true res
-        }}
-      )
-    }}}
-      rcfd_use t closed open
-    {{{ b res,
-      RET res;
-      Χ b res
-    }}}.
-  Proof.
-    iIntros "%Φ (#Hinv & Hclosed & Hopen) HΦ".
-    wp_rec.
-    wp_smart_apply (rcfd_get_spec with "Hinv") as ([]) ""; last iSteps.
-    iIntros "(%q & -> & Htoken & HΨ)".
-    wp_smart_apply (wp_wand with "(Hopen Htoken HΨ)") as "%res (Htoken & HΨ & HΧ)".
-    wp_smart_apply (rcfd_put_spec with "[$Hinv $Htoken $HΨ]").
-    iSteps.
-  Qed.
-
   #[local] Lemma rcfd_is_open_spec_aux closing t fd Ψ :
     {{{
       rcfd_inv t fd Ψ ∗
@@ -1158,5 +1121,4 @@ From zoo_eio Require
   rcfd__opaque.
 
 #[global] Opaque rcfd_inv.
-#[global] Opaque rcfd_token.
 #[global] Opaque rcfd_closing.
